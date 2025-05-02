@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useDebugValue, useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../app/store';
 import { shuffleOrder } from '../features/schedules/schedulesSlice';
+import confetti from 'canvas-confetti'; 
 
 interface DrawOrderProps {
     groupId?: string;
 }
 
 const DrawOrder: React.FC<DrawOrderProps> = ({ groupId }) => {
+     // State tanımlamaları
+  const [showCountdown, setShowCountdown] = useState(false);
+  const [countdownValue, setCountdownValue] = useState(10);
+  const [drawComplete, setDrawComplete] = useState(false);
+  const [shufflingNames, setShufflingNames] = useState<string[]>([]);
+  const [showSuccess, setShowSuccess] = useState(false);
+
   // Bu gruba ait katılımcıları al
   const participants = useSelector((state: RootState) => {
     if (!state.participants.byGroup || !groupId) {
@@ -25,37 +33,80 @@ const DrawOrder: React.FC<DrawOrderProps> = ({ groupId }) => {
   });
   const dispatch = useDispatch();
 
-  // Başarılı mesajı için state
+  // İsim karıştırma efekti için 
+  useEffect(() => {
+    if(showCountdown && !drawComplete && participants.length > 0) {
+        const interval = setInterval(() => {
+            // Katılımcı isimlerini rastgele karıştır ve göster 
+            const shuffled = [...participants]
+                .sort(() => Math.random() - 0.5)
+                .slice(0, 5) // sadece ilk 5 kişiyi göster
+                .map(p => p.name);
 
-  const [showSuccess, setShowSucsess] = useState(false);
+            setShufflingNames(shuffled);
+        }, 200); 
+
+        return () => clearInterval(interval);
+    }
+
+  }, [showCountdown, drawComplete, participants])
+
+  // Geri sayım efekti
+  useEffect(() => {
+    if (showCountdown && countdownValue > 0) {
+        const timer = setTimeout(() => {
+            setCountdownValue(countdownValue - 1);
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    } else if (showCountdown && countdownValue === 0) {
+        // Geri sayım tammamlandığında
+        setDrawComplete(true);
+
+        // Konfeti efekti
+        confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 }
+        });
+
+        // Gerçek kura çekimi işlemini yap
+        if(groupId && participants.length > 0){
+            const participantIds = participants.map(p => p.id);
+            dispatch(shuffleOrder({
+                groupId,
+                order: participantIds
+            }));
+        }
+    }
+  }, [showCountdown, countdownValue, dispatch, groupId, participants]);
   
   // Otomatik kura çekimi
   const handleAutomaticDraw = () => {
     if (!groupId || participants.length === 0) return;
 
-    const participantIds = participants.map(p => p.id);
-
-      // Katılımcıları karıştır
-      //const shuffledIds = [...participants.map(p => p.id)].sort(() => Math.random() - 0.5);
-
-  // Yeni sıralamayı kaydet - grup ID'sine göre
-    dispatch(shuffleOrder({ 
-        groupId, 
-        order: participantIds 
-    }));
-
-    // Başarı mesajını göster
-  setShowSucsess(true);
-
-  // 3 saniye sonra mesajı kapat
-  setTimeout(() => {
-    setShowSucsess(false);
-  }, 3000);
-
+    // Geri sayımı başlat
+    setShowCountdown(true);
+    setCountdownValue(10);
+    setDrawComplete(false);
   };
+
+
+  // Kura sonuçlarını göster 
+  const handleShowResults = () => {
+    setShowCountdown(false);
+    setDrawComplete(false);
+    setShowSuccess(true);
+    
+    // 3 saniye sonra başarı mesajını kapat
+    setTimeout(() => {
+      setShowSuccess(false);
+    }, 3000);
+  };
+
   
   return (
-    <div>
+    <div className="relative">
       <h2 className="text-xl font-semibold mb-4">Kura Çekimi</h2>
       
       {/* Başarı mesajı */}
@@ -78,6 +129,7 @@ const DrawOrder: React.FC<DrawOrderProps> = ({ groupId }) => {
             <button
               className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
               onClick={handleAutomaticDraw}
+              disabled={showCountdown}
             >
               Otomatik Kura Çek
             </button>
@@ -85,7 +137,61 @@ const DrawOrder: React.FC<DrawOrderProps> = ({ groupId }) => {
               Kura çekildiğinde sıralama rastgele belirlenecek ve kaydedilecektir.
             </p>
           </div>
-          
+        
+        {/* Geri sayım modalı */}
+        {showCountdown && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-8 max-w-md w-full text-center">
+                {!drawComplete ? (
+                  <>
+                    <div className="flex justify-center mb-6">
+                      <div className={`w-32 h-32 rounded-full flex items-center justify-center border-4 border-blue-500 text-4xl font-bold transition-all duration-1000 ${
+                        countdownValue <= 3 ? 'text-red-500 border-red-500' : 'text-blue-500'
+                      }`}>
+                        {countdownValue}
+                      </div>
+                    </div>
+                    <h3 className="text-xl font-semibold mb-4">Kura Çekiliyor...</h3>
+                    
+                    {/* Karışan isimler listesi */}
+                    <div className="h-40 overflow-hidden bg-gray-50 rounded mb-4 flex flex-col justify-center">
+                      {shufflingNames.map((name, index) => (
+                        <div key={index} className="py-1 text-gray-800 animate-pulse">
+                          {name}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <p className="text-gray-600">
+                      Katılımcılar karıştırılıyor, lütfen bekleyin...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-center mb-6">
+                      <div className="w-32 h-32 rounded-full flex items-center justify-center border-4 border-green-500 bg-green-500 text-white">
+                        <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    </div>
+                    <h3 className="text-xl font-semibold mb-4">Kura Çekimi Tamamlandı!</h3>
+                    <p className="text-gray-600 mb-6">
+                      Kura çekimi başarıyla tamamlandı. Sonuçları görmek için aşağıdaki butona tıklayın.
+                    </p>
+                    <button
+                      className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded"
+                      onClick={handleShowResults}
+                    >
+                      Sonuçları Göster
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+
           <div className="mt-6">
             <h3 className="font-medium mb-2">Günün Sıralaması</h3>
             {order.length === 0 ? (
