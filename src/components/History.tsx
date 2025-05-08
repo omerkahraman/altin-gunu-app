@@ -57,53 +57,87 @@ const History: React.FC<HistoryProps> = ({ groupId }) => {
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Tarih belirtilmedi';
     
-    const date = new Date(dateString);
-    return `${date.getDate()} ${getMonthName(date.getMonth())} ${date.getFullYear()}`;
+    try {
+      // YYYY-MM-DD formatında tarih işleme
+      if (dateString.includes('-') && !dateString.includes('T')) {
+        const [year, month, day] = dateString.split('-').map(Number);
+        // Ay değerini olduğu gibi kullan - month-1 yerine direkt month değerini kullan
+        return `${day} ${getMonthName(month)} ${year}`;
+      } else {
+        // ISO format için
+        const date = new Date(dateString);
+        return `${date.getDate()} ${getMonthName(date.getMonth())} ${date.getFullYear()}`;
+      }
+    } catch (error) {
+      console.error('Tarih formatı hatası:', error);
+      return 'Geçersiz tarih formatı';
+    }
   };
+
+  const allHistoryEntries = useMemo(() => {
+        // Tarihe göre sırala ve aynı tarihli kayıtları alt alta getir
+
+    return [...historyEntries].sort((a, b) => {
+        const dateA = new Date(a.date);
+        const dateB = new Date(b.date);
+
+        // Önce tarihe göre sırala
+        const dateCompare = dateB.getTime() - dateA.getTime();
+        if(dateCompare !== 0) return dateCompare;
+
+        // Aynı tarihte olan kayıtların sırasını koru
+        const statusOrder = { 'planned': 0, 'completed': 1, 'canceled': 2 };
+        return statusOrder[a.status] - statusOrder[b.status];
+    });
+  }, [historyEntries]);
   
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-4">Geçmiş Günler</h2>
+      <h2 className="text-xl font-semibold mb-4">Geçmiş</h2>
       
-      {pastEvents.length === 0 ? (
-        <p className="text-gray-500">Henüz tamamlanmış veya iptal edilmiş gün bulunmuyor.</p>
+      {allHistoryEntries.length === 0 ? (
+        <p className="text-gray-500">Henüz geçmiş kaydı bulunmuyor.</p>
       ) : (
         <div className="divide-y border rounded">
-          {pastEvents.map(event => (
+          {allHistoryEntries.map(entry => (
             <div 
-              key={event.id} 
-              className={`p-4 ${event.status === 'canceled' ? 'bg-red-50' : 'bg-green-50'}`}
+              key={entry.id} 
+              className={`p-4 ${
+                entry.status === 'canceled' ? 'bg-red-50' : 
+                entry.status === 'completed' ? 'bg-green-50' : 'bg-gray-50'
+              }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-medium">
-                  {getMonthName(parseInt(event.month))} {event.year}
+                  {formatDate(entry.date)}
                 </h3>
                 <span 
                   className={`px-2 py-1 rounded text-xs font-medium ${
-                    event.status === 'completed' 
+                    entry.status === 'completed' 
                       ? 'bg-green-200 text-green-800' 
-                      : 'bg-red-200 text-red-800'
+                      : entry.status === 'canceled' ? 'bg-red-200 text-red-800' : 'bg-gray-200 text-gray-800'
                   }`}
                 >
-                  {event.status === 'completed' ? 'Tamamlandı' : 'İptal Edildi'}
+                  {entry.status === 'completed' ? 'Tamamlandı' : 
+                  entry.status === 'canceled' ? 'İptal Edildi' : 'Planlandı'}
                 </span>
               </div>
-              
+
               <div className="grid md:grid-cols-2 gap-3 mb-2">
                 <div>
                   <p className="text-sm text-gray-500">Ev Sahibi</p>
-                  <p>{getParticipantName(event.participantId)}</p>
+                  <p>{getParticipantName(entry.participantId)}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Tarih</p>
-                  <p>{formatDate(event.date)}</p>
+                  <p className="text-sm text-gray-500">Gün Türü</p>
+                  <p>{dayTypes.find(dt => dt.id === entry.dayTypeId)?.name || 'Belirtilmedi'}</p>
                 </div>
               </div>
               
-              {event.note && (
+              {entry.note && (
                 <div className="mt-3 bg-white p-2 rounded border text-sm">
                   <p className="font-medium text-gray-500 mb-1">Not:</p>
-                  <p>{event.note}</p>
+                  <p>{entry.note}</p>
                 </div>
               )}
             </div>

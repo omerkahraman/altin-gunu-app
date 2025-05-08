@@ -4,6 +4,40 @@ import { RootState } from '../app/store';
 import { addSchedule, updateSchedule, Schedule } from '../features/schedules/schedulesSlice';
 import { addHistoryEntry } from '../features/history/historySlice';
 
+
+// Modal bileşeni
+    const Modal = ({ isOpen, onClose, title, message, onConfirm }: {
+        isOpen: boolean,
+        onClose: () => void,
+        title: string,
+        message: string,
+        onConfirm: () => void
+    }) => {
+    if (!isOpen) return null;
+  
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <h3 className="text-lg font-semibold mb-4">{title}</h3>
+          <p className="mb-6 whitespace-pre-line">{message}</p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+            >
+              İptal
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Onayla
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 interface ScheduleListProps {
     groupId?: string;
   }
@@ -38,7 +72,14 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
   const selectedDayTypeId = useSelector((state: RootState) => 
     state.dayTypes.selectedByGroup[groupId || ''] || null
   );
-  
+
+  const [modal, setModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   const dispatch = useDispatch();
   
   const currentYear = new Date().getFullYear();
@@ -103,10 +144,11 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
   const handleDateChange = (scheduleId: string, date: string) => {
     const schedule = schedules.find(s => s.id === scheduleId);
     if (schedule) {
-      dispatch(updateSchedule({
+      const updatedSchedule = {
         ...schedule,
         date
-      }));
+      };
+      dispatch(updateSchedule(updatedSchedule));
     }
   };
   
@@ -114,31 +156,62 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
   const handleSaveNote = (scheduleId: string) => {
     const schedule = schedules.find(s => s.id === scheduleId);
     if (schedule) {
+        if(!schedule.date) {
+            setModal({
+                isOpen: true,
+                title: 'Uyarı',
+                message: 'Lütfen bir tarih seçin',
+                onConfirm: () => setModal({...modal, isOpen: false})
+            });
+            return;
+        }
+
+      // Not değerini al
+      const noteValue = currentNote[scheduleId] || schedule.note || '';
+      
       const updatedSchedule = {
         ...schedule,
-        note: currentNote[scheduleId] || schedule.note || ''
+        note: noteValue
       };
-      
-      dispatch(updateSchedule(updatedSchedule));
-      
-      // "Planlandı" durumu değiştirirken de geçmişe ekle
-      if (schedule.status === 'planned' || schedule.status === 'completed' || schedule.status === 'canceled') {
-        dispatch(addHistoryEntry({
-          id: Date.now().toString(),
-          groupId: groupId || '',
-          date: updatedSchedule.date,
-          participantId: updatedSchedule.participantId,
-          dayTypeId: selectedDayTypeId || '',
-          status: schedule.status === 'completed' ? 'completed' : 'canceled',
-          note: updatedSchedule.note
-        }));
-        
-        // Uyarı göster
-        if (schedule.status === 'completed') {
-          // Burada başarı mesajı gösterebilirsin
-          // Ama şimdilik geçelim çünkü diğer eklemeye odaklanıyoruz
+
+      //Onay mesajı
+      const confirmMessage = `Seçilen tarih: ${new Date(schedule.date).toLocaleDateString('tr-TR')}\n`+
+      `Durum: ${schedule.status === 'planned' ? 'Planlandı' :
+               schedule.status === 'completed' ? 'Tamamlandı' : 'İptal Edildi'}\n` +
+      `Not: ${updatedSchedule.note}\n\n` +
+      'Bu bilgileri kaydetmek istediğinize emin misiniz?';
+
+      setModal({
+        isOpen: true,
+        title: 'Onay',
+        message: confirmMessage,
+        onConfirm: () => {
+            // Not değerini updatedSchedule'a set et ve Redux'a gönder
+            dispatch(updateSchedule({
+              ...updatedSchedule,
+              note: noteValue
+            }));
+
+            dispatch(addHistoryEntry({
+                id: Date.now().toString(),
+                groupId: groupId || '',
+                date: schedule.date,
+                participantId: updatedSchedule.participantId,
+                dayTypeId: selectedDayTypeId || '',
+                status: schedule.status,
+                note: noteValue,
+                scheduleId: schedule.id
+            }));
+            
+            // Not alanını temizle
+            setCurrentNote({
+              ...currentNote,
+              [scheduleId]: '' // Sadece ilgili program için not alanını temizle
+            });
+            
+            setModal({...modal, isOpen: false});
         }
-      }
+      });
     }
   };
   
@@ -146,10 +219,33 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
   const handleStatusChange = (scheduleId: string, status: 'planned' | 'completed' | 'canceled') => {
     const schedule = schedules.find(s => s.id === scheduleId);
     if (schedule) {
-      dispatch(updateSchedule({
-        ...schedule,
-        status
-      }));
+        if(!schedule.date) {
+            setModal({
+                isOpen: true,
+                title: 'Uyarı',
+                message: 'Lütfen bir tarih seçin',
+                onConfirm: () => setModal({ ...modal, isOpen: false })
+              });            
+              return;
+        }
+
+        const updatedSchedule = {
+            ...schedule,
+            status
+        };
+
+        dispatch(updateSchedule(updatedSchedule));
+
+        dispatch(addHistoryEntry({
+            id: Date.now().toString(),
+            groupId: groupId || '',
+            date: schedule.date,
+            participantId: updatedSchedule.participantId,
+            dayTypeId: selectedDayTypeId || '',
+            status: status,
+            note: schedule.note || '',
+            scheduleId: schedule.id
+        }));
     }
   };
   
@@ -223,11 +319,11 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
           ) : (
             <div className="grid gap-4">
               {filteredSchedules.map(schedule => {
-                const monthName = getMonthName(parseInt(schedule.month));
+                //const monthName = getMonthName(parseInt(schedule.month));
                 return (
                   <div key={schedule.id} className="border rounded p-4">
                     <div className="flex flex-col md:flex-row justify-between mb-3">
-                      <h3 className="text-lg font-medium">{monthName} {schedule.year}</h3>
+                      {/* <h3 className="text-lg font-medium">{monthName} {schedule.year}</h3> */}
                       <div className="mt-2 md:mt-0">
                         <span className="text-sm bg-gray-100 px-2 py-1 rounded">
                           {dayTypes.find(dt => dt.id === selectedDayTypeId)?.name || 'Gün türü seçilmedi'}
@@ -303,7 +399,7 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
                           className="border rounded-l p-2 flex-1"
                           rows={2}
                           placeholder="Not ekle..."
-                          value={currentNote[schedule.id] || schedule.note || ''}
+                          value={currentNote[schedule.id] !== undefined ? currentNote[schedule.id] : schedule.note || ''}
                           onChange={(e) => setCurrentNote({
                             ...currentNote,
                             [schedule.id]: e.target.value
@@ -324,6 +420,13 @@ const ScheduleList: React.FC<ScheduleListProps> = ({ groupId }) => {
           )}
         </>
       )}
+      <Modal
+        isOpen={modal.isOpen}
+        onClose={() => setModal({ ...modal, isOpen: false })}
+        title={modal.title}
+        message={modal.message}
+        onConfirm={modal.onConfirm}
+      />
     </div>
   );
 };
