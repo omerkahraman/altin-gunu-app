@@ -6,8 +6,9 @@ export interface HistoryEntry {
   date: string;
   participantId: string;
   dayTypeId: string;
-  status: 'completed' | 'canceled';
+  status: 'planned' | 'completed' | 'canceled';
   note?: string;
+  scheduleId?: string;
 }
 
 interface HistoryState {
@@ -28,11 +29,8 @@ const historySlice = createSlice({
   initialState,
   reducers: {
     addHistoryEntry: (state, action: PayloadAction<HistoryEntry>) => {
-      const { groupId } = action.payload;
+      const { groupId, scheduleId, status } = action.payload;
       
-      // Eski yapı için
-      state.entries.push(action.payload);
-
       // byGroup'u kontrol et ve oluştur
       if (!state.byGroup) {
         state.byGroup = {};
@@ -42,8 +40,26 @@ const historySlice = createSlice({
       if (!state.byGroup[groupId]) {
         state.byGroup[groupId] = [];
       }
+
+      // Eğer scheduleId varsa, mevcut kaydı kontrol et 
+      if(scheduleId) {
+        // Aynı scheduleId ve status'a sahip kayıt var mı kontrol et
+        const existingIndex = state.byGroup[groupId].findIndex(
+          entry => entry.scheduleId === scheduleId && entry.status === status
+        );
+
+
+        // aynı kayıt varsa güncelle
+        if(existingIndex !== -1) {
+          state.byGroup[groupId][existingIndex] = action.payload;
+          return;
+        }
+      }
+
+      // Yeni kayıt ekle
       state.byGroup[groupId].push(action.payload);
     },
+    
     updateHistoryEntry: (state, action: PayloadAction<HistoryEntry>) => {
       const { id, groupId } = action.payload;
       
